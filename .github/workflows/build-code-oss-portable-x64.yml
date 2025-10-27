@@ -56,7 +56,19 @@ jobs:
 
       - name: Package Windows x64 (minified)
         run: npm run gulp vscode-win32-x64-min
-
+      - name: Debug - List packaged output
+        shell: pwsh
+        run: |
+          Write-Host "=== Checking for build outputs ==="
+          Get-ChildItem -Path . -Recurse -Include *.zip, *.exe -ErrorAction SilentlyContinue | 
+            ForEach-Object { Write-Host "Found: $($_.FullName)" }
+          Write-Host "`n=== Directory structure in build/ ==="
+          if (Test-Path "./build") {
+            Get-ChildItem -Path "./build" -Recurse -Depth 3 | 
+              ForEach-Object { Write-Host $_.FullName }
+          } else {
+            Write-Host "No ./build directory found"
+          }
       - name: Locate packaged folder and enable Portable Mode
         shell: pwsh
         id: portable
