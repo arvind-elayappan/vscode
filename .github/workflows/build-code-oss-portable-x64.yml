@@ -61,15 +61,25 @@ jobs:
         shell: pwsh
         id: portable
         run: |
-          $pkg = Get-ChildItem -Recurse -Directory -Path .build | Where-Object {
-            $_.Name -match 'vscode-|VSCode-' -and $_.Name -match 'win32-x64'
-          } | Select-Object -First 1
-          if (-not $pkg) { throw "Packaged output not found under .build/" }
-          New-Item -ItemType Directory -Path (Join-Path $pkg.FullName "data") -Force | Out-Null
+          # Find the packaged executable anywhere in the repo
+          $exe = Get-ChildItem -Recurse -File -Path . -Include "Code - OSS.exe","code-oss.exe","VSCode*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Could not find packaged executable. Packaging may have failed earlier." }
+       
+          # The app folder is the EXE's parent directory
+          $pkg = Split-Path -Parent $exe.FullName
+       
+          # Enable portable mode by creating 'data' next to the EXE
+          New-Item -ItemType Directory -Path (Join-Path $pkg "data") -Force | Out-Null
+       
+          # Name the zip using tag or commit
           $ref = "${{ github.ref_name }}"
           if (-not $ref) { $ref = (git rev-parse --short HEAD) }
           $zipPath = "${{ github.workspace }}\code-oss-win32-x64-portable-$ref.zip"
-          Compress-Archive -Path "$($pkg.FullName)\*" -DestinationPath $zipPath -Force
+       
+          # Zip the whole packaged folder
+          Compress-Archive -Path "$pkg\*" -DestinationPath $zipPath -Force
+       
+          # Expose the zip path to the next step
           Write-Output "zipPath=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Upload portable ZIP
