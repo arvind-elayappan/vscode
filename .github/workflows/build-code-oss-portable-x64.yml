@@ -1,0 +1,70 @@
+name: Build Code-OSS Portable (Windows x64)
+
+on:
+  workflow_dispatch: {}   # manual trigger
+  push:
+    tags:
+      - 'v*.*.*'          # optional: build when you push a tag like v1.91.0
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Point OSS build to Open VSX so Extensions view works
+      - name: Configure Open VSX gallery
+        shell: pwsh
+        run: |
+          $p = "product.json"
+          if (Test-Path $p) {
+            $json = Get-Content $p -Raw | ConvertFrom-Json
+            $json.extensionsGallery = @{
+              serviceUrl = "https://open-vsx.org/vscode/gallery"
+              itemUrl    = "https://open-vsx.org/vscode/item"
+            }
+            ($json | ConvertTo-Json -Depth 100) | Out-File $p -Encoding utf8
+          }
+
+      - name: Setup Node (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node18-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node18-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Package Windows x64 (minified)
+        run: npm run gulp vscode-win32-x64-min
+
+      - name: Locate packaged folder and enable Portable Mode
+        shell: pwsh
+        id: portable
+        run: |
+          $pkg = Get-ChildItem -Recurse -Directory -Path .build | Where-Object {
+            $_.Name -match 'vscode-|VSCode-' -and $_.Name -match 'win32-x64'
+          } | Select-Object -First 1
+          if (-not $pkg) { throw "Packaged output not found under .build/" }
+          New-Item -ItemType Directory -Path (Join-Path $pkg.FullName "data") -Force | Out-Null
+          $ref = "${{ github.ref_name }}"
+          if (-not $ref) { $ref = (git rev-parse --short HEAD) }
+          $zipPath = "${{ github.workspace }}\code-oss-win32-x64-portable-$ref.zip"
+          Compress-Archive -Path "$($pkg.FullName)\*" -DestinationPath $zipPath -Force
+          Write-Output "zipPath=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-oss-win32-x64-portable
+          path: ${{ steps.portable.outputs.zipPath }}
